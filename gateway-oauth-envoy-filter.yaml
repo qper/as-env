@@ -13,13 +13,10 @@ spec:
   - applyTo: HTTP_FILTER
     match:
       context: GATEWAY
-      # routeConfiguration:
-      #   vhost:
-      #     domainName: "httpbin.lima"
       listener:
         portNumber: 443
         filterChain:
-          # sniHosts: ["httpbin.lima", "test.lima"]
+          sni: "*.httpbin.lima"
           filter:
             name: envoy.filters.network.http_connection_manager
             subFilter:
