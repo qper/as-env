@@ -20,7 +20,7 @@ spec:
           filter:
             name: envoy.filters.network.http_connection_manager
             subFilter:
-              name: envoy.filters.http.router
+                name: envoy.filters.http.router
     patch:
       operation: INSERT_FIRST
       value:
@@ -48,9 +48,9 @@ spec:
                 sds_config: { path: /etc/istio/creds/hmac.yaml }
               cookie_domain: ".lima"
               cookie_names:
-                 bearer_token: BearerToken
-                 oauth_expires: OauthExpires
-            auth_scopes: ["openid","profile","email"]
+                bearer_token: BearerToken
+                oauth_expires: OauthExpires
+            auth_scopes: ["openid", "profile", "email"]
             forward_bearer_token: true
             use_refresh_token: true
 
