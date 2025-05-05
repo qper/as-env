@@ -16,9 +16,7 @@ spec:
       listener:
         portNumber: 443
         filterChain:
-          serverNames:
-          - httpbin.lima
-          - api.lima
+          sni: httpbin.lima
           filter:
             name: envoy.filters.network.http_connection_manager
             subFilter:
