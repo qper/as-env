@@ -14,9 +14,9 @@ spec:
     match:
       context: GATEWAY
       listener:
-        portNumber: 443
+        portNumber: 8443
         filterChain:
-          sni: "*.httpbin.lima"
+          sni: "httpbin.lima"
           filter:
             name: envoy.filters.network.http_connection_manager
             subFilter:
