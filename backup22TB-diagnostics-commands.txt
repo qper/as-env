@@ -1,0 +1,92 @@
+backup22TB — Toshiba MG10AFA22TE (serial Y430A0S1FM8J)
+Raspberry Pi / OWC — checklist, 2026-10-11
+
+IMPORTANT:
+- All the commands below target /dev/sda ONLY AFTER YOU CONFIRM it is Toshiba serial Y430A0S1FM8J.
+- Do NOT use mkfs, badblocks -w, fsck -y or any writes on the physical disk.
+- If the archive is the only copy of important photos/videos, copy irreplaceable files to another disk before stressing the HDD.
+- These are individual commands, not a complete automated script: run each stage after verifying the previous stage.
+
+1) Detect disk and state
+  lsblk -o NAME,PATH,SIZE,MODEL,SERIAL,TRAN,FSTYPE,LABEL,MOUNTPOINTS
+  sudo zpool list
+  sudo zpool import
+  sudo dmesg -T | tail -n 100
+
+2) Baseline SMART (the -d sat option has already worked for this HDD)
+  mkdir -p "$HOME/hdd-logs/backup22TB"
+  sudo smartctl -x -d sat /dev/sda | tee "$HOME/hdd-logs/backup22TB/smart-before.txt"
+
+3) Short SMART self-test (about 2 min; don't start an extended test until this finishes)
+  sudo smartctl -t short -d sat /dev/sda
+  # Wait at least the reported time
+  sudo smartctl -l xselftest -d sat /dev/sda
+  sudo smartctl -c -d sat /dev/sda
+
+4) Extended SMART self-test (~1797 min = 29 h 57 min, per this disk)
+  sudo smartctl -t long -d sat /dev/sda
+  # While running, check progress and temperature; don't run dd or scrub concurrently
+  sudo smartctl -c -d sat /dev/sda
+  sudo smartctl -A -d sat /dev/sda | grep -E 'Temperature_Celsius|Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable'
+  # After completion
+  sudo smartctl -l xselftest -d sat /dev/sda
+  sudo smartctl -x -d sat /dev/sda | tee "$HOME/hdd-logs/backup22TB/smart-after-long.txt"
+
+5) Optional full-device read-through (after SMART tests, with zpool exported)
+  sudo zpool list
+  lsblk -o NAME,SIZE,MODEL,SERIAL,MOUNTPOINTS
+  tmux new -s hdd-full-read
+  # Inside tmux; command reads from /dev/sda and discards bytes, DOES NOT write to HDD
+  sudo dd if=/dev/sda of=/dev/null bs=16M iflag=direct status=progress
+  echo "dd exit code: $?"
+  # Detach from tmux: Ctrl+B, then D; resume: tmux attach -t hdd-full-read
+  sudo smartctl -x -d sat /dev/sda | tee "$HOME/hdd-logs/backup22TB/smart-after-read.txt"
+  sudo journalctl -k --since today | grep -Ei 'sda|I/O error|medium error|uas|usb.*reset'
+
+6) Safely import ZFS read-only (only after raw-device tests are finished)
+  sudo mkdir -p /mnt/zfs-inspect
+  sudo zpool import -N -o readonly=on -R /mnt/zfs-inspect backup22TB
+  sudo zpool get readonly,altroot backup22TB
+  sudo zpool status -v backup22TB
+  sudo zfs list -r backup22TB
+  sudo zfs mount -a
+  sudo zfs mount
+  ls -lah /mnt/zfs-inspect/backup22TB/media
+  ls -lah /mnt/zfs-inspect/backup22TB/media/2024
+  ls -lah /mnt/zfs-inspect/backup22TB/media/2025
+
+7) Find historical checksum manifests (read-only)
+  sudo find /mnt/zfs-inspect/backup22TB -type f \( -iname '*checksum*' -o -iname '*sha256*' -o -iname '*sha512*' -o -iname '*md5*' -o -iname '*hash*' -o -iname '*manifest*' -o -iname '*.sfv' -o -iname '*.b3' \) -print
+  sudo find /mnt/zfs-inspect/backup22TB -type f -iname '*.txt' -print
+  # Inspect the real manifest format BEFORE running any validation.
+  # If, and ONLY IF, a SHA256SUMS manifest is rooted at media/ and names are relative to media/:
+  cd /mnt/zfs-inspect/backup22TB/media
+  sha256sum --check --strict --quiet SHA256SUMS > "$HOME/hdd-logs/backup22TB/checksum-verify.log" 2>&1
+  echo "verify exit code: $?"
+  cat "$HOME/hdd-logs/backup22TB/checksum-verify.log"
+  # This only validates listed entries. Separately compare file inventory with the manifest.
+
+8) OPTIONAL ZFS scrub (requires a separate import read-write; only after securing important data)
+  cd ~
+  sudo zpool export backup22TB
+  sudo zpool import -N -R /mnt/zfs-inspect backup22TB
+  sudo zpool get readonly backup22TB
+  sudo zpool scrub backup22TB
+  sudo zpool status -v backup22TB
+  # Wait until scrub finishes, then export
+  sudo zpool export backup22TB
+
+9) Disconnect safely
+  # Ensure tests/copies are stopped and no process is using the pool
+  cd ~
+  sync
+  sudo zpool export backup22TB
+  sudo zpool list
+  # If the pool is no longer listed, switch off the appropriate OWC bay and wait for it to stop spinning.
+  # Optional, only if you also want to power off the Raspberry Pi:
+  sudo shutdown -h now
+
+Current SMART findings as of 2026-10-11 16:35 CEST:
+SMART overall PASS; 0 relocated; 0 pending; 0 uncorrectable; 0 CRC; 441 power-on hours;
+34 C now, 52 C lifetime max, 40 C recommended top; extended test historical aborted by host;
+96 hardware resets and 61 command-acceptance/completion resets need trend/context, not a confirmed fault.
